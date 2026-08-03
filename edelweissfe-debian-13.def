@@ -25,6 +25,11 @@ From: edelweissfe-base.sif
     # cluster/CPU.
     export ARCH_FLAGS="-march=icelake-server -mtune=icelake-server"
 
+    # Space-separated list of manually-cloned, access-controlled Marmot
+    # materials to include (e.g. "GCDP CDP") -- empty by default/for the
+    # official build. See step 2a below.
+    export MANUAL_MATERIALS=""
+
     # 1. Get EdelweissFE
     cd $EWROOT
     # NOTE: cloned from matthiasneuner's fork rather than the EdelweissFE org repo,
@@ -37,6 +42,34 @@ From: edelweissfe-base.sif
     #    runner's CPU instead of the deployment target).
     cd $EWROOT
     git clone --recurse --branch next_v26.11 https://github.com/MAteRialMOdelingToolbox/Marmot.git
+
+    # 2a. Some Marmot materials (e.g. GCDP) are access-controlled and
+    #     deliberately NOT git submodules -- they're cloned by hand into
+    #     modules/materials/<Name> and auto-detected by Marmot's CMake
+    #     globbing. For a LOCAL build (rebuild_and_deploy_leo5.sh binds the
+    #     host's Marmot checkout at /media), pick up explicitly-requested
+    #     ones from whatever's already manually cloned there. No-op for the
+    #     official GitHub-based build, where /media doesn't exist -- that
+    #     build correctly stays limited to publicly-available materials.
+    #
+    #     Deliberately opt-in (via MANUAL_MATERIALS below), not "copy
+    #     everything present" -- the host's Marmot checkout can have
+    #     in-progress/incompatible material dirs (e.g. ones requiring a
+    #     newer, not-yet-merged Marmot CMake convention) that would break
+    #     the build if pulled in blindly.
+    if [ -d /media/modules/materials ] && [ -n "$MANUAL_MATERIALS" ]; then
+        for name in $MANUAL_MATERIALS; do
+            src="/media/modules/materials/$name"
+            dest="$EWROOT/Marmot/modules/materials/$name"
+            if [ -d "$src" ] && [ ! -e "$dest" ]; then
+                cp -r "$src" "$dest"
+                echo "Included manually-cloned material: $name"
+            else
+                echo "WARNING: requested manual material '$name' not found at $src or already present"
+            fi
+        done
+    fi
+
     cd Marmot && mkdir build && cd build
     cmake \
         -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
@@ -75,6 +108,11 @@ From: edelweissfe-base.sif
         echo "EdelweissFE commit: $(git -C $EWROOT/EdelweissFE rev-parse HEAD)"
         echo "Marmot branch: $(git -C $EWROOT/Marmot branch --show-current)"
         echo "Marmot commit: $(git -C $EWROOT/Marmot rev-parse HEAD)"
+        if [ -n "$MANUAL_MATERIALS" ]; then
+            echo "Manually-cloned materials included: $MANUAL_MATERIALS"
+        else
+            echo "Manually-cloned materials included: none"
+        fi
     } > /opt/build_info.txt
     cat /opt/build_info.txt
 

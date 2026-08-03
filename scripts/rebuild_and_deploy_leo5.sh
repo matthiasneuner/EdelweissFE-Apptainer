@@ -12,6 +12,11 @@
 # EdelweissFE's conda_requirements.txt/pip_requirements.txt. Routine
 # EdelweissFE/Marmot updates should NOT need this; the whole point of the
 # base/top-layer split is to skip that slow part on every rebuild.
+#
+# MANUAL_MATERIALS="GCDP CDP" ./scripts/rebuild_and_deploy_leo5.sh -- include
+# access-controlled, non-submodule Marmot materials that are already manually
+# cloned into the local Marmot checkout's modules/materials/ (see
+# LEO5_RUNBOOK.md). Empty by default.
 set -euo pipefail
 
 APPTAINER_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +25,7 @@ EDELWEISSFE_DIR="${EDELWEISSFE_DIR:-$WORKSPACE_DIR/EdelweissFE}"
 MARMOT_DIR="${MARMOT_DIR:-$WORKSPACE_DIR/Marmot}"
 EDELWEISSFE_BRANCH="${EDELWEISSFE_BRANCH:-feat/amr-recovery-marker}"
 MARMOT_BRANCH="${MARMOT_BRANCH:-next_v26.11}"
+MANUAL_MATERIALS="${MANUAL_MATERIALS:-}"
 BUILD_DIR="$APPTAINER_REPO_DIR/.build"
 LEO5_HOST="${LEO5_HOST:-c8441141@leo5.uibk.ac.at}"
 LEO5_CONTAINER_DIR="${LEO5_CONTAINER_DIR:-/scratch/c8441141/containers}"
@@ -53,6 +59,7 @@ MA_BRANCH="$MARMOT_BRANCH"
 
 echo "EdelweissFE: $EF_BRANCH @ $EF_SHA (currently checked out: $(git -C "$EDELWEISSFE_DIR" branch --show-current))"
 echo "Marmot:      $MA_BRANCH @ $MA_SHA (currently checked out: $(git -C "$MARMOT_DIR" branch --show-current))"
+echo "Manual materials: ${MANUAL_MATERIALS:-none}"
 
 for pair in "EdelweissFE:$EDELWEISSFE_DIR:$EDELWEISSFE_BRANCH" "Marmot:$MARMOT_DIR:$MARMOT_BRANCH"; do
     name="${pair%%:*}"; rest="${pair#*:}"; dir="${rest%%:*}"; branch="${rest#*:}"
@@ -71,9 +78,17 @@ sed \
     -e "s#^From: edelweissfe-base.sif#From: $BASE_SIF#" \
     -e "s#git clone --branch [^ ]* https://github.com/[^ ]*/EdelweissFE.git#git clone --branch $EF_BRANCH /mnt EdelweissFE#" \
     -e "s#git clone --recurse --branch [^ ]* https://github.com/MAteRialMOdelingToolbox/Marmot.git#git clone --recurse --branch $MA_BRANCH /media Marmot#" \
+    -e "s#export MANUAL_MATERIALS=\"\"#export MANUAL_MATERIALS=\"$MANUAL_MATERIALS\"#" \
     "$DEF_TEMPLATE" > "$DEF_LOCAL"
 
-SHA_TAG="${EF_SHA}-${MA_SHA}"
+# Materials affect image content independent of EF/MA SHA -- fold them into
+# the cache key so a request with different MANUAL_MATERIALS can't silently
+# reuse a build that lacks them.
+MATERIALS_TAG=""
+if [ -n "$MANUAL_MATERIALS" ]; then
+    MATERIALS_TAG="-$(echo "$MANUAL_MATERIALS" | tr 'A-Z ' 'a-z-' | tr -s '-')"
+fi
+SHA_TAG="${EF_SHA}-${MA_SHA}${MATERIALS_TAG}"
 SIF_NAME="edelweissfe-${SHA_TAG}.sif"
 SIF_PATH="$BUILD_DIR/$SIF_NAME"
 

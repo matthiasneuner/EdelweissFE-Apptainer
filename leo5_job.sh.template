@@ -11,6 +11,11 @@
 #SBATCH -p std                         # default partition, max 10-00:00:00; use 'test' (max 10:00:00) for quick smoke runs
 #SBATCH -o slurm-%j.out
 #SBATCH -e slurm-%j.err
+#SBATCH --mail-user=matthias.neuner@uibk.ac.at
+
+# so a failing 'edelweissfe' still fails the job (and triggers --mail-type=FAIL)
+# even though its exit status is piped through tee below
+set -o pipefail
 
 echo "Date              = $(date)"
 echo "Hostname          = $(hostname -s)"
@@ -27,8 +32,16 @@ export SINGULARITYENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export APPTAINERENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export SINGULARITYENV_PYTHON_GIL=0
 export APPTAINERENV_PYTHON_GIL=0
+# Python fully buffers stdout when it's not a TTY (e.g. redirected to a log
+# file) -- without this, the log file stays empty for long stretches and
+# only catches up in bursts, or not at all if the job is killed/times out.
+export PYTHONUNBUFFERED=1
+export SINGULARITYENV_PYTHONUNBUFFERED=1
+export APPTAINERENV_PYTHONUNBUFFERED=1
 
 # LEO5's Singularity install only auto-binds $HOME, not $SCRATCH -- bind the
 # working directory explicitly or the container won't see your input files.
 # $1: path to the .inp input file, relative to the current working directory
-singularity exec --bind "$(pwd)" edelweissfe-debian-13.sif edelweissfe "$1"
+# Log written explicitly to $1.log in addition to Slurm's own -o/-e (which
+# land in slurm-<jobid>.out/.err) -- tail -f $1.log to follow.
+singularity exec --bind "$(pwd)" edelweissfe-debian-13.sif edelweissfe "$1" 2>&1 | tee "${1%.inp}.log"
