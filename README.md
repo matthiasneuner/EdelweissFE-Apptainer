@@ -111,3 +111,7 @@ Key points baked into the template:
   regardless of which module name resolved.
 * `PYTHON_GIL=0` is set inside the container environment to keep
   EdelweissFE's free-threaded parallel element loops enabled.
+* `singularity exec --bind "$(pwd)"` -- LEO5's Singularity install only
+  auto-binds `$HOME`, not `$SCRATCH`. Without the explicit `--bind`, the
+  container can't see your input files even though `apptainer run` on your
+  own machine "just works" (confirmed by testing on LEO5 directly).

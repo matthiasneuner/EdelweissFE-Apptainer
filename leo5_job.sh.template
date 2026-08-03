@@ -28,5 +28,7 @@ export APPTAINERENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export SINGULARITYENV_PYTHON_GIL=0
 export APPTAINERENV_PYTHON_GIL=0
 
+# LEO5's Singularity install only auto-binds $HOME, not $SCRATCH -- bind the
+# working directory explicitly or the container won't see your input files.
 # $1: path to the .inp input file, relative to the current working directory
-singularity exec edelweissfe-debian-13.sif edelweissfe "$1"
+singularity exec --bind "$(pwd)" edelweissfe-debian-13.sif edelweissfe "$1"
