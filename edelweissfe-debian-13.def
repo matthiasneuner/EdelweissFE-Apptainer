@@ -38,7 +38,10 @@ From: debian:13
 
     # 3. Get EdelweissFE & install its Python requirements
     cd $EWROOT
-    git clone --branch feat/amr-recovery-marker https://github.com/EdelweissFE/EdelweissFE.git
+    # NOTE: cloned from matthiasneuner's fork rather than the EdelweissFE org repo,
+    # because feat/amr-recovery-marker isn't merged/pushed there yet. Switch back to
+    # https://github.com/EdelweissFE/EdelweissFE.git once it lands on next_v26.11.
+    git clone --branch feat/amr-recovery-marker https://github.com/matthiasneuner/EdelweissFE.git
     mamba install -y --file EdelweissFE/conda_requirements.txt
     pip install -r EdelweissFE/pip_requirements.txt
     mamba clean -a -y

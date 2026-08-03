@@ -45,7 +45,10 @@ apptainer run edelweissfe-debian-13.sif my_simulation_input.inp
 
 * Eigen 3.4.0, autodiff v1.1.0, Fastor (header-only) -- Marmot's dependencies
 * [Marmot](https://github.com/MAteRialMOdelingToolbox/Marmot), branch `next_v26.11`
-* [EdelweissFE](https://github.com/EdelweissFE/EdelweissFE), branch `feat/amr-recovery-marker`
+* [EdelweissFE](https://github.com/EdelweissFE/EdelweissFE), branch `feat/amr-recovery-marker` --
+  currently cloned from [matthiasneuner's fork](https://github.com/matthiasneuner/EdelweissFE)
+  since this branch isn't merged/pushed to the org repo yet; switch the `.def` file back to the
+  org URL once it lands on `next_v26.11`
 
 The image build hard-fails if the Marmot-backed Cython extensions
 (`marmotelement`, `marmotmaterialhypoelasticwrapper`) don't compile --
