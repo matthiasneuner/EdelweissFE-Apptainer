@@ -1,23 +1,21 @@
-Bootstrap: docker
-From: debian:13
+Bootstrap: localimage
+From: edelweissfe-base.sif
+
+# Top layer: Marmot + EdelweissFE, built on top of the cached base image
+# (edelweissfe-base.def/.sif -- Debian + conda deps + Eigen/autodiff/Fastor).
+# This is the part that changes routinely (new EdelweissFE/Marmot commits) and
+# is deliberately kept cheap to rebuild: no conda solve, no re-downloading
+# mkl/vtk/pyvista. See scripts/rebuild_and_deploy_leo5.sh and LEO5_RUNBOOK.md.
+#
+# `edelweissfe-base.sif` must exist alongside this .def file when building
+# (built once from edelweissfe-base.def; the rebuild script handles this).
 
 %post
-    # Prevent interactive prompts during apt installs
-    export DEBIAN_FRONTEND=noninteractive
-
-    # Install base dependencies for compiling
-    apt-get update && apt-get install -y \
-        build-essential \
-        cmake \
-        git \
-        curl \
-        wget \
-        && rm -rf /var/lib/apt/lists/*
-
-    # Set up a working directory for building
     export EWROOT=/opt/edelweiss
     mkdir -p $EWROOT
     cd $EWROOT
+    export PATH="/opt/miniforge/bin:$PATH"
+    export CONDA_PREFIX="/opt/miniforge"
 
     # Target CPU for compiled hot paths: LEO5 (Uni Innsbruck) compute nodes are
     # Intel Xeon Platinum 8358 ("Ice Lake-SP"), full AVX-512. Pinning this
@@ -27,57 +25,14 @@ From: debian:13
     # cluster/CPU.
     export ARCH_FLAGS="-march=icelake-server -mtune=icelake-server"
 
-    # 1. Install Miniforge
-    curl -L -O https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-    bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge
-    rm Miniforge3-Linux-x86_64.sh
-
-    # 2. Expose Conda/Mamba to the PATH and set CONDA_PREFIX
-    export PATH="/opt/miniforge/bin:$PATH"
-    export CONDA_PREFIX="/opt/miniforge"
-
-    # 3. Get EdelweissFE & install its Python requirements
+    # 1. Get EdelweissFE
     cd $EWROOT
     # NOTE: cloned from matthiasneuner's fork rather than the EdelweissFE org repo,
     # because feat/amr-recovery-marker isn't merged/pushed there yet. Switch back to
     # https://github.com/EdelweissFE/EdelweissFE.git once it lands on next_v26.11.
     git clone --branch feat/amr-recovery-marker https://github.com/matthiasneuner/EdelweissFE.git
-    mamba install -y --file EdelweissFE/conda_requirements.txt
-    pip install -r EdelweissFE/pip_requirements.txt
-    mamba clean -a -y
 
-    # 4. Get and compile Eigen
-    cd $EWROOT
-    git clone --branch 3.4.0 https://gitlab.com/libeigen/eigen.git
-    cd eigen && mkdir build && cd build
-    cmake \
-        -DBUILD_TESTING=OFF \
-        -DINCLUDE_INSTALL_DIR=$CONDA_PREFIX/include \
-        -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-        ..
-    make install
-
-    # 5. Get and compile Autodiff
-    cd $EWROOT
-    git clone --branch v1.1.0 https://github.com/autodiff/autodiff.git
-    cd autodiff && mkdir build && cd build
-    cmake \
-        -DAUTODIFF_BUILD_TESTS=OFF \
-        -DAUTODIFF_BUILD_PYTHON=OFF \
-        -DAUTODIFF_BUILD_EXAMPLES=OFF \
-        -DAUTODIFF_BUILD_DOCS=OFF \
-        -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-        ..
-    make install
-
-    # 6. Get and compile Fastor (header-only; no arch flags needed to install)
-    cd $EWROOT
-    git clone https://github.com/romeric/Fastor.git
-    cd Fastor
-    cmake -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX .
-    make install
-
-    # 7. Get and compile Marmot, targeting the Ice Lake-SP hot paths explicitly
+    # 2. Get and compile Marmot, targeting the Ice Lake-SP hot paths explicitly
     #    (MARMOT_MARCH_NATIVE stays OFF -- it would again target the CI
     #    runner's CPU instead of the deployment target).
     cd $EWROOT
@@ -87,9 +42,9 @@ From: debian:13
         -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
         -DCMAKE_CXX_FLAGS="$ARCH_FLAGS" \
         ..
-    make install
+    make -j"$(nproc)" install
 
-    # 8. Build and install EdelweissFE, linked against Marmot
+    # 3. Build and install EdelweissFE, linked against Marmot
     cd $EWROOT/EdelweissFE
     export MARMOT_INSTALL_DIR=$CONDA_PREFIX
     export MKL_INCLUDE_DIR=$CONDA_PREFIX/include
@@ -97,7 +52,7 @@ From: debian:13
     export EDELWEISSFE_ARCH_FLAGS="$ARCH_FLAGS"
     pip install .
 
-    # 8a. setup.py's optional_build_ext lets any single Cython extension fail
+    # 3a. setup.py's optional_build_ext lets any single Cython extension fail
     #     without aborting the whole `pip install`, logging successes to
     #     built_extensions.log instead. A container whose whole purpose is
     #     running Marmot-backed materials must not silently ship without the
@@ -110,9 +65,22 @@ From: debian:13
         grep -q "$ext" "$BUILD_LOG" || { echo "FATAL: required extension '$ext' failed to build"; exit 1; }
     done
 
-    # 9. Cleanup source files to drastically reduce the final .sif file size
+    # 4. Stamp build provenance before the source trees are wiped -- lets
+    #    `singularity exec <sif> cat /opt/build_info.txt` answer "what's
+    #    actually in this image" without re-cloning anything.
+    {
+        echo "Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "Arch flags: $ARCH_FLAGS"
+        echo "EdelweissFE branch: $(git -C $EWROOT/EdelweissFE branch --show-current)"
+        echo "EdelweissFE commit: $(git -C $EWROOT/EdelweissFE rev-parse HEAD)"
+        echo "Marmot branch: $(git -C $EWROOT/Marmot branch --show-current)"
+        echo "Marmot commit: $(git -C $EWROOT/Marmot rev-parse HEAD)"
+    } > /opt/build_info.txt
+    cat /opt/build_info.txt
+
+    # 5. Cleanup source files to drastically reduce the final .sif file size
     cd /opt
-    rm -rf $EWROOT/eigen $EWROOT/autodiff $EWROOT/Fastor $EWROOT/Marmot $EWROOT/EdelweissFE
+    rm -rf $EWROOT/Marmot $EWROOT/EdelweissFE
 
 %environment
     # Ensure Conda/Mamba is available on the path at runtime

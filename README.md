@@ -77,6 +77,11 @@ appropriate instead if you're building locally on the exact target machine).
 
 ## Running on LEO5 (Uni Innsbruck)
 
+For the recurring workflow (updating the container, syncing project
+directories, submitting/monitoring jobs), see
+[`LEO5_RUNBOOK.md`](LEO5_RUNBOOK.md) and the helper scripts under
+[`scripts/`](scripts/). What follows here is the one-off manual version.
+
 LEO5 uses Slurm and only exposes Apptainer/Singularity via the module system
 (there is no `apptainer`/`singularity` binary on `PATH` by default):
 
