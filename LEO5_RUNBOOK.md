@@ -33,9 +33,19 @@ when picking the workflow back up in a new session.
   results side by side. Mirrored 1:1 to `$SCRATCH/<project-dir-name>/` on
   LEO5 -- see `scripts/leo5_sync.sh`.
 * **Build provenance**: every image has `/opt/build_info.txt` baked in
-  (EdelweissFE/Marmot branch + commit SHA, arch flags, build date). Read it
-  with `singularity exec <sif> cat /opt/build_info.txt`, or just run
+  (EdelweissFE/Marmot branch + commit SHA, arch flags, build date, which
+  manually-cloned materials are included). Read it with
+  `singularity exec <sif> cat /opt/build_info.txt`, or just run
   `scripts/check_deployed_leo5.sh`.
+* **Access-controlled materials** (e.g. `GCDP`, `CDP`): deliberately NOT git
+  submodules of Marmot -- some materials aren't meant to be visible to
+  everyone who clones the public repo. They're cloned by hand into the local
+  Marmot checkout's `modules/materials/<Name>`, same as for a native build.
+  If a sim needs one, pass it via `MANUAL_MATERIALS="GCDP CDP"
+  ./scripts/rebuild_and_deploy_leo5.sh` -- opt-in by name, not "copy
+  everything present" (the host checkout can have in-progress material dirs
+  that need a not-yet-merged Marmot CMake convention and would break the
+  build). `GCDP` specifically needs `CDP` too (its plasticity header).
 
 ## Updating the container (when EdelweissFE or Marmot changes)
 
