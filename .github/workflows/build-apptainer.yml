@@ -26,6 +26,13 @@ jobs:
         run: |
           apptainer build edelweissfe-debian-13.sif edelweissfe-debian-13.def
 
+      # Catches a broken image (e.g. a missing Marmot-backed extension, see
+      # edelweissfe-debian-13.def's build-log check) before it ever reaches
+      # a Release.
+      - name: Smoke test image
+        run: |
+          apptainer exec edelweissfe-debian-13.sif edelweissfe --help
+
       # This uploads the built .sif container to your GitHub Releases page
       - name: Upload SIF to GitHub Release
         uses: softprops/action-gh-release@v2

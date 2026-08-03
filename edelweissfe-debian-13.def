@@ -19,23 +19,31 @@ From: debian:13
     mkdir -p $EWROOT
     cd $EWROOT
 
+    # Target CPU for compiled hot paths: LEO5 (Uni Innsbruck) compute nodes are
+    # Intel Xeon Platinum 8358 ("Ice Lake-SP"), full AVX-512. Pinning this
+    # explicitly matters because this container is built on a generic CI
+    # runner, not on an Ice Lake machine -- "-march=native" here would target
+    # the *runner's* CPU instead. Retarget this single line for a different
+    # cluster/CPU.
+    export ARCH_FLAGS="-march=icelake-server -mtune=icelake-server"
+
     # 1. Install Miniforge
     curl -L -O https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
     bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge
     rm Miniforge3-Linux-x86_64.sh
 
-    # 2. Expose Conda/Mamba to the PATH and set CONDA_PREFIX 
+    # 2. Expose Conda/Mamba to the PATH and set CONDA_PREFIX
     export PATH="/opt/miniforge/bin:$PATH"
     export CONDA_PREFIX="/opt/miniforge"
 
-    # 3. Get EdelweissFE & Install Python requirements
-    # Miniforge includes the 'mamba' command by default, so this works natively
+    # 3. Get EdelweissFE & install its Python requirements
     cd $EWROOT
-    git clone https://github.com/EdelweissFE/EdelweissFE.git
-    mamba install -y --file EdelweissFE/requirements.txt
-    mamba clean -a -y 
+    git clone --branch feat/amr-recovery-marker https://github.com/EdelweissFE/EdelweissFE.git
+    mamba install -y --file EdelweissFE/conda_requirements.txt
+    pip install -r EdelweissFE/pip_requirements.txt
+    mamba clean -a -y
 
-    # 4. Get and Compile Eigen
+    # 4. Get and compile Eigen
     cd $EWROOT
     git clone --branch 3.4.0 https://gitlab.com/libeigen/eigen.git
     cd eigen && mkdir build && cd build
@@ -46,7 +54,7 @@ From: debian:13
         ..
     make install
 
-    # 5. Get and Compile Autodiff
+    # 5. Get and compile Autodiff
     cd $EWROOT
     git clone --branch v1.1.0 https://github.com/autodiff/autodiff.git
     cd autodiff && mkdir build && cd build
@@ -59,23 +67,45 @@ From: debian:13
         ..
     make install
 
-    # 6. Get and Compile Fastor
+    # 6. Get and compile Fastor (header-only; no arch flags needed to install)
     cd $EWROOT
     git clone https://github.com/romeric/Fastor.git
     cd Fastor
     cmake -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX .
     make install
 
-    # 7. Get and Compile Marmot
+    # 7. Get and compile Marmot, targeting the Ice Lake-SP hot paths explicitly
+    #    (MARMOT_MARCH_NATIVE stays OFF -- it would again target the CI
+    #    runner's CPU instead of the deployment target).
     cd $EWROOT
-    git clone --recurse https://github.com/MAteRialMOdelingToolbox/Marmot.git
+    git clone --recurse --branch next_v26.11 https://github.com/MAteRialMOdelingToolbox/Marmot.git
     cd Marmot && mkdir build && cd build
-    cmake -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX ..
+    cmake \
+        -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
+        -DCMAKE_CXX_FLAGS="$ARCH_FLAGS" \
+        ..
     make install
 
-    # 8. Build and install EdelweissFE
+    # 8. Build and install EdelweissFE, linked against Marmot
     cd $EWROOT/EdelweissFE
+    export MARMOT_INSTALL_DIR=$CONDA_PREFIX
+    export MKL_INCLUDE_DIR=$CONDA_PREFIX/include
+    export EIGEN_INCLUDE_DIR=$CONDA_PREFIX/include/eigen3
+    export EDELWEISSFE_ARCH_FLAGS="$ARCH_FLAGS"
     pip install .
+
+    # 8a. setup.py's optional_build_ext lets any single Cython extension fail
+    #     without aborting the whole `pip install`, logging successes to
+    #     built_extensions.log instead. A container whose whole purpose is
+    #     running Marmot-backed materials must not silently ship without the
+    #     Marmot element/material wrappers -- fail the image build hard if
+    #     either is missing.
+    BUILD_LOG=$(python -c "import edelweissfe, pathlib; print(pathlib.Path(edelweissfe.__file__).parent / 'built_extensions.log')")
+    echo "Checking $BUILD_LOG for required Marmot-backed extensions:"
+    cat "$BUILD_LOG"
+    for ext in marmotelement marmotmaterialhypoelasticwrapper; do
+        grep -q "$ext" "$BUILD_LOG" || { echo "FATAL: required extension '$ext' failed to build"; exit 1; }
+    done
 
     # 9. Cleanup source files to drastically reduce the final .sif file size
     cd /opt
@@ -84,6 +114,9 @@ From: debian:13
 %environment
     # Ensure Conda/Mamba is available on the path at runtime
     export PATH="/opt/miniforge/bin:$PATH"
+    # OMP_NUM_THREADS and PYTHON_GIL must be set per-job from the Slurm
+    # script (see leo5_job.sh.template) -- not baked in here, since the
+    # right thread count depends on the job's --cpus-per-task.
 
 %runscript
     # The default command when running the container

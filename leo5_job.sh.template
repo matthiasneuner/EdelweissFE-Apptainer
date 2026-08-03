@@ -1,0 +1,32 @@
+#!/bin/bash
+#SBATCH --job-name=edelweissfe_run
+#SBATCH --mail-type=END,FAIL           # Mail events (NONE, BEGIN, END, FAIL, ALL)
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64             # one full Ice Lake-SP node's *physical* cores;
+                                        # LEO5 reports 128 (2x hyperthreaded) -- oversubscribing
+                                        # HT for this compute-bound OpenMP code usually doesn't pay off,
+                                        # benchmark on the 'test' partition before committing to a value.
+#SBATCH --mem=240000mb
+#SBATCH --time=1-00:00:00              # Wall time limit (days-hrs:min:sec)
+#SBATCH -p std                         # default partition, max 10-00:00:00; use 'test' (max 10:00:00) for quick smoke runs
+#SBATCH -o slurm-%j.out
+#SBATCH -e slurm-%j.err
+
+echo "Date              = $(date)"
+echo "Hostname          = $(hostname -s)"
+echo "Working Directory = $(pwd)"
+echo ""
+echo "Number of Nodes Allocated      = $SLURM_JOB_NUM_NODES"
+echo "Number of Tasks Allocated      = $SLURM_NTASKS"
+echo "Number of Cores/Task Allocated = $SLURM_CPUS_PER_TASK"
+
+module load singularityce/4.3.0-python-3.11.9-gcc-13.3.0-n5qceek
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export SINGULARITYENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export APPTAINERENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export SINGULARITYENV_PYTHON_GIL=0
+export APPTAINERENV_PYTHON_GIL=0
+
+# $1: path to the .inp input file, relative to the current working directory
+singularity exec edelweissfe-debian-13.sif edelweissfe "$1"
