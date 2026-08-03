@@ -12,6 +12,14 @@ when picking the workflow back up in a new session.
   logical (HT2) cores per node, full AVX-512.
 * Partitions: `std` (default, max 10-00:00:00) and `test` (max 10:00:00, good
   for smoke tests) -- both offer up to 64 physical cores/node.
+* **Memory is tied to CPU count: ~2000MB/logical-CPU (256GB / 128 CPUs per
+  node).** Slurm's scheduler bumps the actual CPU *allocation* up to whatever
+  this ratio requires to back your `--mem` request, even though `CPUs/Task`
+  (and so `OMP_NUM_THREADS`) stays at whatever you asked for -- the extra
+  cores are billed/reserved but sit idle. Confirmed on a real job: requested
+  16 cpus + 64GB, got `AllocCPUS=32` while `CPUs/Task` stayed 16.
+  `scripts/leo5_submit.sh` now warns if your cpus/mem ratio would trigger
+  this -- size `--cpus-per-task` to match your memory need (or vice versa).
 * No `apptainer`/`singularity` on `PATH` by default; every remote command
   needs `module load singularityce/4.3.0-python-3.11.9-gcc-13.3.0-n5qceek`
   first (the scripts below already do this for you).

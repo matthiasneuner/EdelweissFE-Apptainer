@@ -22,6 +22,24 @@ MAIL_USER="${MAIL_USER:-matthias.neuner@uibk.ac.at}"
 JOB_NAME="$(basename "$INPUT" .inp)"
 LOG_NAME="${PROJECT}_${JOB_NAME}.log"
 
+# LEO5's std/test partition nodes are 256GB / 128 logical CPUs = 2000MB/CPU.
+# Slurm's scheduler bumps the actual CPU allocation up to whatever this ratio
+# requires to back the requested memory, even though CPUs/Task (and so
+# OMP_NUM_THREADS) stays at what you asked for -- meaning the extra cores are
+# billed/reserved but sit idle, unused by this job. Confirmed on job 7298015:
+# asked for 16 cpus + 64GB, got AllocCPUS=32 while CPUs/Task stayed 16.
+MEM_MB=$(echo "$MEM" | sed -E 's/([0-9]+)[gG][bB]?/\1000/; s/([0-9]+)[mM][bB]?/\1/; s/[^0-9]//g')
+MB_PER_CPU=2000
+MIN_CPUS_FOR_MEM=$(( (MEM_MB + MB_PER_CPU - 1) / MB_PER_CPU ))
+if [ "$CPUS" -lt "$MIN_CPUS_FOR_MEM" ]; then
+    echo "WARNING: requesting ${MEM} with only --cpus-per-task=${CPUS} -- LEO5's" \
+         "~${MB_PER_CPU}MB/CPU ratio means Slurm will actually allocate/bill" \
+         "~${MIN_CPUS_FOR_MEM} cpus to back that memory, but OMP_NUM_THREADS stays" \
+         "at ${CPUS} (the other $((MIN_CPUS_FOR_MEM - CPUS)) sit idle). Consider" \
+         "raising cpus to ${MIN_CPUS_FOR_MEM}, or lowering mem, to avoid wasting" \
+         "allocated cores."
+fi
+
 JOB_SCRIPT=$(mktemp)
 trap 'rm -f "$JOB_SCRIPT"' EXIT
 cat > "$JOB_SCRIPT" <<EOF
