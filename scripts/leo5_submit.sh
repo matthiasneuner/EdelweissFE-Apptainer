@@ -40,6 +40,18 @@ if [ "$CPUS" -lt "$MIN_CPUS_FOR_MEM" ]; then
          "allocated cores."
 fi
 
+# This job script pins to a single socket (--sockets-per-node=1
+# --hint=nomultithread, see below) -- LEO5's sockets are 32 physical cores
+# each, so a request above that can never be satisfied within one socket.
+CORES_PER_SOCKET=32
+if [ "$CPUS" -gt "$CORES_PER_SOCKET" ]; then
+    echo "WARNING: --cpus-per-task=${CPUS} exceeds LEO5's ${CORES_PER_SOCKET}" \
+         "physical cores/socket, but this job script pins to a single socket" \
+         "(--sockets-per-node=1 --hint=nomultithread) -- the request will" \
+         "likely fail to schedule or silently span sockets. Use" \
+         "${CORES_PER_SOCKET} or fewer."
+fi
+
 JOB_SCRIPT=$(mktemp)
 trap 'rm -f "$JOB_SCRIPT"' EXIT
 cat > "$JOB_SCRIPT" <<EOF
@@ -52,6 +64,13 @@ cat > "$JOB_SCRIPT" <<EOF
 #SBATCH -p ${PARTITION}
 #SBATCH -o slurm-%j.out
 #SBATCH -e slurm-%j.err
+# LEO5 nodes are 2 sockets x 32 physical cores (HT2, 128 logical cpus/node).
+# Cross-socket NUMA traffic hurts this workload -- stay on one physical CPU
+# package: --sockets-per-node=1 keeps the whole allocation within one socket,
+# --hint=nomultithread avoids being handed HT sibling cpus instead of distinct
+# physical cores (only sane up to --cpus-per-task=32, one socket's worth).
+#SBATCH --sockets-per-node=1
+#SBATCH --hint=nomultithread
 $([ -n "$MAIL_USER" ] && echo "#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=${MAIL_USER}")
 
@@ -63,6 +82,21 @@ module load ${SINGULARITY_MODULE}
 export OMP_NUM_THREADS=\${SLURM_CPUS_PER_TASK}
 export SINGULARITYENV_OMP_NUM_THREADS=\${SLURM_CPUS_PER_TASK}
 export APPTAINERENV_OMP_NUM_THREADS=\${SLURM_CPUS_PER_TASK}
+# Do NOT pin threads with OMP_PROC_BIND/OMP_PLACES. EdelweissFE's element loop
+# is a Python ThreadPoolExecutor under free threading (PYTHON_GIL=0), not an
+# OpenMP team: with OMP_PROC_BIND set, libgomp pins the process's INITIAL
+# thread to one core the moment it loads, and every Python worker created
+# after that inherits that one-core mask -- the "parallel" element loop then
+# runs on a single physical core. Seen live on 2026-09-17 (jobs 7804958/59/60:
+# 21 of 32 workers confined to cpus 3,67; elements 0.263 s/increment, 6x
+# slower than unpinned on the same model). Socket placement is done by the
+# SBATCH directives above, which is all the pinning this workload wants.
+# Set to false explicitly rather than left unset, so nothing inherited from
+# the login environment or a module can switch it on inside the container.
+export OMP_PROC_BIND=false
+export SINGULARITYENV_OMP_PROC_BIND=false
+export APPTAINERENV_OMP_PROC_BIND=false
+unset OMP_PLACES SINGULARITYENV_OMP_PLACES APPTAINERENV_OMP_PLACES
 export SINGULARITYENV_PYTHON_GIL=0
 export APPTAINERENV_PYTHON_GIL=0
 # Python fully buffers stdout when it's not a TTY (e.g. redirected to a log

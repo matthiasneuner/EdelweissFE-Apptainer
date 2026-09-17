@@ -30,6 +30,11 @@ module load singularityce/4.3.0-python-3.11.9-gcc-13.3.0-n5qceek
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export SINGULARITYENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export APPTAINERENV_OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+# Never OMP_PROC_BIND/OMP_PLACES: they pin the Python element-loop workers to ONE core
+# (see LEO5_RUNBOOK.md, "Threading"). Explicitly false so nothing inherited can enable it.
+export OMP_PROC_BIND=false
+export SINGULARITYENV_OMP_PROC_BIND=false
+export APPTAINERENV_OMP_PROC_BIND=false
 export SINGULARITYENV_PYTHON_GIL=0
 export APPTAINERENV_PYTHON_GIL=0
 # Python fully buffers stdout when it's not a TTY (e.g. redirected to a log

@@ -12,14 +12,54 @@ when picking the workflow back up in a new session.
   logical (HT2) cores per node, full AVX-512.
 * Partitions: `std` (default, max 10-00:00:00) and `test` (max 10:00:00, good
   for smoke tests) -- both offer up to 64 physical cores/node.
-* **Memory is tied to CPU count: ~2000MB/logical-CPU (256GB / 128 CPUs per
-  node).** Slurm's scheduler bumps the actual CPU *allocation* up to whatever
-  this ratio requires to back your `--mem` request, even though `CPUs/Task`
-  (and so `OMP_NUM_THREADS`) stays at whatever you asked for -- the extra
-  cores are billed/reserved but sit idle. Confirmed on a real job: requested
-  16 cpus + 64GB, got `AllocCPUS=32` while `CPUs/Task` stayed 16.
-  `scripts/leo5_submit.sh` now warns if your cpus/mem ratio would trigger
-  this -- size `--cpus-per-task` to match your memory need (or vice versa).
+* **`--hint=nomultithread` doubles your billed/allocated CPU count, always --
+  this is NOT a memory-ratio effect.** An earlier version of this note blamed
+  the ~2000MB/logical-CPU ratio (256GB / 128 CPUs per node) for bumping
+  `AllocCPUS` above `--cpus-per-task`. That was wrong, or at best an
+  unfalsified coincidence: job 7803550 (2026-09-16) requested
+  `--cpus-per-task=24 --mem=48000mb` -- exactly 24 x 2000MB, so the
+  memory-ratio theory predicts NO bump -- and still got `AllocCPUS=48`
+  (`scontrol show job`: `NumCPUs=48 CPUs/Task=24 ReqB:S:C:T=0:0:*:1`,
+  `TRES=...,billing=48`). The real mechanism: nodes are 64 physical / 128
+  logical (HT2) cores, and `--hint=nomultithread` (which `leo5_submit.sh`
+  always sets, for the socket-pinning reason below) forces Slurm to reserve
+  the *entire physical core* -- both hyperthread siblings -- for every
+  logical CPU requested, independent of `--mem`. So billed/allocated CPUs on
+  this cluster are always ~2x `--cpus-per-task` whenever nomultithread is
+  set; `CPUs/Task` (and so `OMP_NUM_THREADS`) still correctly stays at what
+  you asked for -- the extra logical CPUs are reserved so no other job's
+  thread lands on your cores' hyperthread siblings, not wasted compute. The
+  older 16-cpu-+-64GB-\>32 example that "confirmed" the memory-ratio theory
+  is also consistent with this one (16 x 2 = 32), so it never actually
+  distinguished the two -- this job does.
+  `scripts/leo5_submit.sh`'s cpus/mem warning is still reasonable hygiene
+  (LEO5 does also enforce a real 2000MB/logical-CPU memory:CPU minimum, it
+  just isn't why `AllocCPUS` doubles here) but don't expect turning it off to
+  change the 2x-on-nomultithread billing.
+* **Threading: set `OMP_NUM_THREADS` and `PYTHON_GIL=0`, and NEVER
+  `OMP_PROC_BIND`/`OMP_PLACES`.** EdelweissFE parallelizes its element loop
+  with a Python `ThreadPoolExecutor` under free threading (that is what
+  `PYTHON_GIL=0` is for; `OMP_NUM_THREADS` is only read to size that pool).
+  It is not an OpenMP team, and OpenMP's pinning knobs break it: with
+  `OMP_PROC_BIND` set, libgomp pins the process's *initial* thread to one
+  core the moment an OpenMP-linked extension loads, and every Python worker
+  thread created afterwards inherits that one-core mask -- so the "parallel"
+  element loop runs on a single physical core, with no error and no warning.
+  Found live on 2026-09-17 in jobs 7804958/7804959/7804960 (submitted with
+  `OMP_PROC_BIND=close OMP_PLACES=cores`): on the compute node the main
+  thread's `Cpus_allowed_list` was `3,67`, 21 of the 32 pool workers sat on
+  that one core (1.69 busy cores between them), the other 12 idled 73 % of
+  the time waiting for them, and `elements` cost 0.263 s/increment -- a
+  same-machine A/B of the identical restart gave 0.655 s/increment pinned vs
+  0.097 s unpinned. `scripts/leo5_submit.sh` and the job template therefore
+  export `OMP_PROC_BIND=false` explicitly (an unset variable can be switched
+  on by a module or an inherited environment) and never set `OMP_PLACES`;
+  socket placement is left to the `--sockets-per-node=1 --hint=nomultithread`
+  SBATCH directives, which is all the placement this workload wants. Job
+  scripts written before 2026-09-17 carry the six offending exports and must
+  have them removed before being reused. To verify on a running job, from
+  the login node: `ssh <node> "grep Cpus_allowed_list /proc/<pid>/task/*/status
+  | sort | uniq -c"` -- every thread must show the whole allocation.
 * No `apptainer`/`singularity` on `PATH` by default; every remote command
   needs `module load singularityce/4.3.0-python-3.11.9-gcc-13.3.0-n5qceek`
   first (the scripts below already do this for you).
