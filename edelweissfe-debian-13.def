@@ -2,7 +2,8 @@ Bootstrap: localimage
 From: edelweissfe-base.sif
 
 # Top layer: Marmot + EdelweissFE, built on top of the cached base image
-# (edelweissfe-base.def/.sif -- Debian + conda deps + Eigen/autodiff/Fastor).
+# (edelweissfe-base.def/.sif -- Debian + the pinned edelweissfe-dev conda
+# environment, which already contains compilers, Eigen/autodiff/Fastor/AMGCL).
 # This is the part that changes routinely (new EdelweissFE/Marmot commits) and
 # is deliberately kept cheap to rebuild: no conda solve, no re-downloading
 # mkl/vtk/pyvista. See scripts/rebuild_and_deploy_leo5.sh and LEO5_RUNBOOK.md.
@@ -14,8 +15,14 @@ From: edelweissfe-base.sif
     export EWROOT=/opt/edelweiss
     mkdir -p $EWROOT
     cd $EWROOT
-    export PATH="/opt/miniforge/bin:$PATH"
-    export CONDA_PREFIX="/opt/miniforge"
+    # Activate the environment, not just PATH: its bin/ provides conda's GCC
+    # (plain gcc/g++, picked up by cmake and setuptools; there is no system
+    # compiler in the image), and edelweissfe-dev's activation script sets
+    # PIP_NO_BUILD_ISOLATION=0 so pip builds against the environment's
+    # Cython/NumPy instead of fetching copies from PyPI.
+    . /opt/miniforge/etc/profile.d/conda.sh
+    conda activate /opt/edelweissfe-env
+    echo "CONDA_PREFIX=$CONDA_PREFIX g++=$(command -v g++) PIP_NO_BUILD_ISOLATION=${PIP_NO_BUILD_ISOLATION:-unset}"
 
     # Target CPU for compiled hot paths: LEO5 (Uni Innsbruck) compute nodes are
     # Intel Xeon Platinum 8358 ("Ice Lake-SP"), full AVX-512. Pinning this
@@ -32,16 +39,14 @@ From: edelweissfe-base.sif
 
     # 1. Get EdelweissFE
     cd $EWROOT
-    # NOTE: cloned from matthiasneuner's fork rather than the EdelweissFE org repo,
-    # because feat/amr-recovery-marker isn't merged/pushed there yet. Switch back to
-    # https://github.com/EdelweissFE/EdelweissFE.git once it lands on next_v26.11.
-    git clone --branch feat/amr-recovery-marker https://github.com/matthiasneuner/EdelweissFE.git
+    # Switch back to org repo now that everything has landed on next_v26.11
+    git clone --branch next_v26.11 https://github.com/Edelweiss-Numerics/EdelweissFE.git
 
     # 2. Get and compile Marmot, targeting the Ice Lake-SP hot paths explicitly
     #    (MARMOT_MARCH_NATIVE stays OFF -- it would again target the CI
     #    runner's CPU instead of the deployment target).
     cd $EWROOT
-    git clone --recurse --branch next_v26.11 https://github.com/MAteRialMOdelingToolbox/Marmot.git
+    git clone --recurse-submodules --branch next_v26.11 https://github.com/MAteRialMOdelingToolbox/Marmot.git
 
     # 2a. Some Marmot materials (e.g. GCDP) are access-controlled and
     #     deliberately NOT git submodules -- they're cloned by hand into
@@ -71,19 +76,32 @@ From: edelweissfe-base.sif
     fi
 
     cd Marmot && mkdir build && cd build
+    # CXXFLAGS is empty unless conda's compiler activation ran; it carries no -march.
+    # the package registry is off so nothing outside the environment is found.
     cmake \
         -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-        -DCMAKE_CXX_FLAGS="$ARCH_FLAGS" \
+        -DCMAKE_PREFIX_PATH=$CONDA_PREFIX \
+        -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+        -DCMAKE_CXX_FLAGS="${CXXFLAGS:-} $ARCH_FLAGS" \
         ..
-    make -j"$(nproc)" install
+    # Marmot's heavily-templated Eigen/Fastor code compiled with
+    # -march=icelake-server (AVX-512 codegen) is memory-hungry per
+    # translation unit -- a flat $(nproc), or even a flat "4", OOM-killed
+    # cc1plus on a memory-constrained build host (30GB RAM total, often only
+    # ~7GB free alongside other running programs). Size parallelism off
+    # currently-available memory instead of core count, budgeting ~6GB/job
+    # (measured: 4 jobs against ~7.5GB available still OOM'd).
+    MARMOT_BUILD_JOBS=$(( $(awk '/MemAvailable/{printf "%d", $2/1024/1024}' /proc/meminfo) / 6 ))
+    [ "$MARMOT_BUILD_JOBS" -lt 1 ] && MARMOT_BUILD_JOBS=1
+    [ "$MARMOT_BUILD_JOBS" -gt "$(nproc)" ] && MARMOT_BUILD_JOBS="$(nproc)"
+    echo "Building Marmot with -j$MARMOT_BUILD_JOBS (sized off available memory)"
+    make -j"$MARMOT_BUILD_JOBS" install
 
     # 3. Build and install EdelweissFE, linked against Marmot
     cd $EWROOT/EdelweissFE
     export MARMOT_INSTALL_DIR=$CONDA_PREFIX
-    export MKL_INCLUDE_DIR=$CONDA_PREFIX/include
-    export EIGEN_INCLUDE_DIR=$CONDA_PREFIX/include/eigen3
     export EDELWEISSFE_ARCH_FLAGS="$ARCH_FLAGS"
-    pip install .
+    pip install --no-build-isolation -v .
 
     # 3a. setup.py's optional_build_ext lets any single Cython extension fail
     #     without aborting the whole `pip install`, logging successes to
@@ -94,7 +112,11 @@ From: edelweissfe-base.sif
     BUILD_LOG=$(python -c "import edelweissfe, pathlib; print(pathlib.Path(edelweissfe.__file__).parent / 'built_extensions.log')")
     echo "Checking $BUILD_LOG for required Marmot-backed extensions:"
     cat "$BUILD_LOG"
-    for ext in marmotelement marmotmaterialhypoelasticwrapper; do
+    # marmotmaterialhypoelasticwrapper was removed by PR #79 ("make Marmot and native
+    # EdelweissFE materials interchangeable"): marmotsingleqpelement is now pure Python,
+    # built on marmothypoelastic/marmotgradientenhancedhypoelastic instead of its own
+    # Cython wrapper. Check for those directly rather than the extension that replaced it.
+    for ext in marmotelement marmothypoelastic marmotgradientenhancedhypoelastic amgcl pardiso; do
         grep -q "$ext" "$BUILD_LOG" || { echo "FATAL: required extension '$ext' failed to build"; exit 1; }
     done
 
@@ -103,6 +125,7 @@ From: edelweissfe-base.sif
     #    actually in this image" without re-cloning anything.
     {
         echo "Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        cat /opt/base_info.txt
         echo "Arch flags: $ARCH_FLAGS"
         echo "EdelweissFE branch: $(git -C $EWROOT/EdelweissFE branch --show-current)"
         echo "EdelweissFE commit: $(git -C $EWROOT/EdelweissFE rev-parse HEAD)"
@@ -121,8 +144,11 @@ From: edelweissfe-base.sif
     rm -rf $EWROOT/Marmot $EWROOT/EdelweissFE
 
 %environment
-    # Ensure Conda/Mamba is available on the path at runtime
-    export PATH="/opt/miniforge/bin:$PATH"
+    # The pinned environment first on PATH at runtime. Full activation is not
+    # needed to run: the Marmot extensions find libMarmot via their embedded
+    # library path (EdelweissFE records the install dir at build time).
+    export PATH="/opt/edelweissfe-env/bin:/opt/miniforge/bin:$PATH"
+    export CONDA_PREFIX="/opt/edelweissfe-env"
     # OMP_NUM_THREADS and PYTHON_GIL must be set per-job from the Slurm
     # script (see leo5_job.sh.template) -- not baked in here, since the
     # right thread count depends on the job's --cpus-per-task.

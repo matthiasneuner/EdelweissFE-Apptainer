@@ -1,84 +1,48 @@
 Bootstrap: docker
 From: debian:13
 
-# Base layer: Debian + Miniforge + conda/pip dependencies + Eigen/autodiff/Fastor.
-# This is the slow, rarely-changing part of the stack (conda solve + big
-# downloads like mkl/vtk/pyvista dominate build time; Eigen/autodiff/Fastor are
-# header-only and quick). Rebuild this ONLY when
-# EdelweissFE/conda_requirements.txt or pip_requirements.txt change --
-# otherwise edelweissfe-debian-13.def layers on top of the cached result via
-# `Bootstrap: localimage`, so routine EdelweissFE/Marmot updates skip all of
-# this entirely. See scripts/rebuild_and_deploy_leo5.sh and LEO5_RUNBOOK.md.
+# Base layer: Debian + Miniforge + the pinned EdelweissFE development environment.
+#
+# The environment is EdelweissFE's own `edelweissfe-dev` meta-package from the
+# Edelweiss conda channel: it pins every package (Python 3.14 free-threaded,
+# compilers, cmake, MKL, vtk/pyvista, SuiteSparse, Boost, and Marmot's header-only
+# dependencies Eigen/autodiff/Fastor plus AMGCL) exactly as EdelweissFE's
+# conda-lock.yml does. Nothing is built from source here any more.
+#
+# Rebuild this layer ONLY when the edelweissfe-dev version changes
+# (EdelweissFE/conda/edelweissfe-dev/VERSION) -- otherwise
+# edelweissfe-debian-13.def layers on top of the cached result via
+# `Bootstrap: localimage`. scripts/rebuild_and_deploy_leo5.sh passes the version
+# of the EdelweissFE branch being built (--build-arg) and keys the cached base
+# image on it; the default below is what CI builds, keep it in sync.
+
+%arguments
+    EDELWEISSFE_DEV_VERSION=2026.10.04
 
 %post
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update && apt-get install -y \
-        build-essential \
-        cmake \
-        git \
+    # Only what conda does not provide: git (cloning) and curl (Miniforge).
+    # Compilers, cmake and make come from the conda environment.
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
         curl \
-        wget \
+        git \
         && rm -rf /var/lib/apt/lists/*
-
-    export EWROOT=/opt/edelweiss
-    mkdir -p $EWROOT
-    cd $EWROOT
 
     # 1. Install Miniforge
     curl -L -O https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
     bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge
     rm Miniforge3-Linux-x86_64.sh
 
-    # 2. Expose Conda/Mamba to the PATH and set CONDA_PREFIX
-    export PATH="/opt/miniforge/bin:$PATH"
-    export CONDA_PREFIX="/opt/miniforge"
+    # 2. Create the pinned environment at a fixed prefix (EdelweissFE README,
+    #    "Create the EdelweissFE environment").
+    /opt/miniforge/bin/conda create -y -p /opt/edelweissfe-env \
+        -c https://repo.prefix.dev/matthiasneuner/edelweiss -c conda-forge \
+        edelweissfe-dev={{ EDELWEISSFE_DEV_VERSION }}
+    /opt/miniforge/bin/conda clean -a -y
 
-    # 3. Install EdelweissFE's Python requirements.
-    #    Kept in sync manually with EdelweissFE/conda_requirements.txt and
-    #    pip_requirements.txt (deliberately not cloning EdelweissFE here --
-    #    this layer knows nothing about which EdelweissFE branch will be
-    #    used on top of it). Re-copy these lists if those files change.
-    mamba install -y \
-        anaconda::mkl anaconda::mkl-include anaconda::intel-openmp \
-        boost-cpp cmake compilers cython gstools make numpy numpydoc \
-        python=3.14 python-freethreading pytest prettytable scipy \
-        suitesparse sphinx "sphinx_rtd_theme>=3.1.0" sympy
-    pip install docutils matplotlib pyamg pyvista "vtk>=9.1.0"
-    mamba clean -a -y
-
-    # 4. Get and compile Eigen
-    cd $EWROOT
-    git clone --branch 3.4.0 https://gitlab.com/libeigen/eigen.git
-    cd eigen && mkdir build && cd build
-    cmake \
-        -DBUILD_TESTING=OFF \
-        -DINCLUDE_INSTALL_DIR=$CONDA_PREFIX/include \
-        -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-        ..
-    make -j"$(nproc)" install
-
-    # 5. Get and compile Autodiff
-    cd $EWROOT
-    git clone --branch v1.1.0 https://github.com/autodiff/autodiff.git
-    cd autodiff && mkdir build && cd build
-    cmake \
-        -DAUTODIFF_BUILD_TESTS=OFF \
-        -DAUTODIFF_BUILD_PYTHON=OFF \
-        -DAUTODIFF_BUILD_EXAMPLES=OFF \
-        -DAUTODIFF_BUILD_DOCS=OFF \
-        -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-        ..
-    make -j"$(nproc)" install
-
-    # 6. Get and compile Fastor (header-only; no arch flags needed to install)
-    cd $EWROOT
-    git clone https://github.com/romeric/Fastor.git
-    cd Fastor
-    cmake -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX .
-    make -j"$(nproc)" install
-
-    cd /opt
-    rm -rf $EWROOT/eigen $EWROOT/autodiff $EWROOT/Fastor
+    echo "edelweissfe-dev: {{ EDELWEISSFE_DEV_VERSION }}" > /opt/base_info.txt
 
 %environment
-    export PATH="/opt/miniforge/bin:$PATH"
+    export PATH="/opt/edelweissfe-env/bin:/opt/miniforge/bin:$PATH"
+    export CONDA_PREFIX="/opt/edelweissfe-env"

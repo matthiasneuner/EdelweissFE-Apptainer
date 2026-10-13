@@ -22,8 +22,9 @@ jobs:
         with:
           apptainer-version: '1.3.0'
 
-      # The base layer (conda deps + Eigen/autodiff/Fastor) is the slow part
-      # and only changes when edelweissfe-base.def itself does -- cache it so
+      # The base layer (the pinned edelweissfe-dev conda environment) is the
+      # slow part and only changes when edelweissfe-base.def itself does (its
+      # %arguments default pins the version) -- cache it so
       # routine EdelweissFE/Marmot bumps don't pay that cost on every run.
       - name: Cache base image
         id: cache-base

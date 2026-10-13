@@ -2,7 +2,7 @@
 
 This repository provides a fully packaged, ready-to-run [Apptainer](https://apptainer.org/) (formerly Singularity) container for the [EdelweissFE](https://edelweiss-numerics.github.io/EdelweissFE/) framework. 
 
-Building EdelweissFE requires compiling several C++ libraries (Eigen, Autodiff, Fastor, Marmot). This container handles all of those dependencies internally using a Debian 13 base and Miniforge, allowing you to run simulations immediately without needing a local C++ build environment or Conda setup.
+Building EdelweissFE with Marmot requires a pinned conda environment plus compiling Marmot. This container does both, on a Debian 13 base with Miniforge, allowing you to run simulations immediately without needing a local C++ build environment or Conda setup.
 
 ---
 
@@ -41,17 +41,18 @@ apptainer run edelweissfe-debian-13.sif my_simulation_input.inp
 
 ## What's inside
 
-`edelweissfe-debian-13.def` builds, from source, on top of a Debian 13 + Miniforge base:
-
-* Eigen 3.4.0, autodiff v1.1.0, Fastor (header-only) -- Marmot's dependencies
-* [Marmot](https://github.com/MAteRialMOdelingToolbox/Marmot), branch `next_v26.11`
-* [EdelweissFE](https://github.com/EdelweissFE/EdelweissFE), branch `feat/amr-recovery-marker` --
-  currently cloned from [matthiasneuner's fork](https://github.com/matthiasneuner/EdelweissFE)
-  since this branch isn't merged/pushed to the org repo yet; switch the `.def` file back to the
-  org URL once it lands on `next_v26.11`
+* `edelweissfe-base.def`: Debian 13 + Miniforge + EdelweissFE's pinned development
+  environment, the `edelweissfe-dev` meta-package from the Edelweiss conda channel
+  (`https://repo.prefix.dev/matthiasneuner/edelweiss`), at `/opt/edelweissfe-env`. It pins
+  everything exactly as EdelweissFE's `conda-lock.yml`: free-threaded Python 3.14, compilers,
+  cmake, MKL, vtk/pyvista, and Eigen/autodiff/Fastor/AMGCL. Nothing is compiled in this layer.
+* `edelweissfe-debian-13.def` builds, on top of it:
+  * [Marmot](https://github.com/MAteRialMOdelingToolbox/Marmot), branch `next_v26.11`
+  * [EdelweissFE](https://github.com/Edelweiss-Numerics/EdelweissFE), branch `next_v26.11`
 
 The image build hard-fails if the Marmot-backed Cython extensions
-(`marmotelement`, `marmotmaterialhypoelasticwrapper`) don't compile --
+(`marmotelement`, `marmothypoelastic`, `marmotgradientenhancedhypoelastic`) or the
+`amgcl`/`pardiso` solver bindings don't compile --
 EdelweissFE's `setup.py` otherwise lets individual extensions fail silently,
 which would produce a container that looks fine but is missing Marmot
 materials/elements at runtime.

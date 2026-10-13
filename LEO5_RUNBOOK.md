@@ -99,11 +99,14 @@ when picking the workflow back up in a new session.
 
 The image is split into two layers to keep routine rebuilds cheap:
 
-* **`edelweissfe-base.def`** -- Debian + conda/pip deps (`mkl`, `vtk`,
-  `pyvista`, ...) + Eigen/autodiff/Fastor. This is the slow part (conda solve
-  + big downloads) but changes rarely -- only when EdelweissFE's
-  `conda_requirements.txt`/`pip_requirements.txt` (or `edelweissfe-base.def`
-  itself) changes.
+* **`edelweissfe-base.def`** -- Debian + the pinned `edelweissfe-dev` conda
+  environment (EdelweissFE's meta-package; includes compilers, `mkl`, `vtk`,
+  `pyvista`, Eigen/autodiff/Fastor/AMGCL). This is the slow part (big
+  downloads) but changes rarely -- only when `conda/edelweissfe-dev/VERSION`
+  on the EdelweissFE branch changes. The rebuild script reads that version
+  and caches the base as `.build/edelweissfe-base-<version>.sif`, so a bump
+  triggers a base rebuild automatically. CI builds the default version in
+  `%arguments` of `edelweissfe-base.def` -- bump it there too.
 * **`edelweissfe-debian-13.def`** -- `Bootstrap: localimage` on top of the
   cached base, clones + builds Marmot and EdelweissFE only. This is what
   changes on every routine update, and it's what stays fast: ~7 minutes
@@ -117,15 +120,15 @@ Workflow:
 2. `scripts/check_deployed_leo5.sh` -- compare local HEADs against what's
    deployed, to confirm a rebuild is actually needed.
 3. `scripts/rebuild_and_deploy_leo5.sh` -- builds the top layer against the
-   *fixed* target branches (`feat/amr-recovery-marker` / `next_v26.11` by
+   *fixed* target branches (`next_v26.11` / `next_v26.11` by
    default, override via `EDELWEISSFE_BRANCH`/`MARMOT_BRANCH` env vars --
    deliberately NOT whatever happens to be checked out locally, since that's
    ambient state, not a deliberate choice), reusing the cached base layer.
    Tags the image by short SHA pair, `scp`s it to `$SCRATCH/containers/`,
    repoints `edelweissfe-latest.sif`, and smoke-tests it on the login node.
    - Pass `--no-deploy` to just build+inspect locally without touching LEO5.
-   - Pass `--rebuild-base` after editing `edelweissfe-base.def` or the
-     conda/pip requirements -- otherwise the cached base is reused as-is.
+   - Pass `--rebuild-base` after editing `edelweissfe-base.def` -- otherwise
+     the cached base for that `edelweissfe-dev` version is reused as-is.
 
 **Don't run two rebuilds concurrently** -- both use the same local
 `.build/apptainer-cache`, and overlapping `apptainer build --fakeroot`
