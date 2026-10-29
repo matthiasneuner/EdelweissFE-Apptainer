@@ -11,6 +11,8 @@
 : "${LEO4_CONTAINER_DIR:=/scratch/<user>/containers}"
 : "${VSC5_HOST:=vsc5}"
 : "${VSC5_CONTAINER_DIR:=/gpfs/data/<project>/<user>/containers}"
+: "${MUSICA_HOST:=musica-vie}"
+: "${MUSICA_CONTAINER_DIR:=/data/<project>/<user>/containers}"
 
 # Access-controlled Marmot materials to build in, and where their clones live.
 : "${MANUAL_MATERIALS:=}"

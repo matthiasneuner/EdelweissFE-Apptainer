@@ -11,7 +11,7 @@
 
 APPTAINER_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$APPTAINER_REPO_DIR/.build}"
-TARGETS="leo5 leo4 vsc5 generic"
+TARGETS="leo5 leo4 vsc5 musica generic"
 
 # Sets for target $1:
 #   TARGET, ARCH_FLAGS, TARGET_TAG (image-name suffix), CONTAINER_MODULE,
@@ -37,6 +37,13 @@ load_target() {
         vsc5)
             ARCH_FLAGS="-march=znver3 -mtune=znver3"
             CONTAINER_MODULE="apptainer/1.1.9-gcc-12.2.0-ab3ze5o"
+            CONTAINER_CMD=apptainer
+            ;;
+        # MUSICA (ASC, Vienna and Innsbruck sites): AMD EPYC 9654 (Zen 4), AVX2 and AVX-512.
+        # Apptainer is part of the nodes' system installation (no module needed).
+        musica)
+            ARCH_FLAGS="-march=znver4 -mtune=znver4"
+            CONTAINER_MODULE=""
             CONTAINER_CMD=apptainer
             ;;
         # Any x86 CPU with AVX2/FMA; same flags as the CI release image.
@@ -104,7 +111,7 @@ remote_container_exec() {
 
 require_deploy_config() {
     if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_DIR" ]; then
-        echo "ERROR: no deploy host/directory for target '$TARGET'. Pass --target=<leo5|leo4|vsc5>" \
+        echo "ERROR: no deploy host/directory for target '$TARGET'. Pass --target=<leo5|leo4|vsc5|musica>" \
              "and set ${TARGET^^}_HOST and ${TARGET^^}_CONTAINER_DIR in deploy.local.sh" \
              "(see deploy.local.sh.example)." >&2
         exit 1

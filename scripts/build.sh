@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the EdelweissFE image for one target cluster's CPU.
 #
-# Usage: scripts/build.sh --target=<leo5|leo4|vsc5|generic> [--rebuild-base]
+# Usage: scripts/build.sh --target=<leo5|leo4|vsc5|musica|generic> [--rebuild-base]
 #
 # Sources are the branch tips of the upstream repositories (EDELWEISSFE_REPO /
 # EDELWEISSFE_BRANCH, MARMOT_REPO / MARMOT_BRANCH, defaults: the GitHub

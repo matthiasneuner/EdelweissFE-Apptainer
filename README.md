@@ -72,6 +72,7 @@ machine than the one it runs on. `scripts/_targets.sh` holds the targets:
 | `leo5`    | Intel Xeon Platinum 8358 (Ice Lake-SP)  | `icelake-server` | `singularityce/4.3.0-...` module      |
 | `leo4`    | Intel Xeon E5-2690 v4 (Broadwell)       | `broadwell`      | `singularity/3.x` module              |
 | `vsc5`    | AMD EPYC 7713 (Zen 3)                   | `znver3`         | `apptainer/1.1.9-...` module          |
+| `musica`  | AMD EPYC 9654 (Zen 4)                   | `znver4`         | system Apptainer (1.5.2), no module   |
 | `generic` | any x86 with AVX2/FMA (the CI image)    | `x86-64-v3`      | --                                    |
 
 An image built for an AVX-512 CPU dies with `SIGILL` on a CPU without it.

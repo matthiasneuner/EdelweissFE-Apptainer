@@ -2,7 +2,7 @@
 # Copies a built image to a cluster, points edelweissfe-latest.sif at it and
 # smoke-tests it on the login node.
 #
-# Usage: scripts/deploy.sh --target=<leo5|leo4|vsc5> [--via-host=<ssh-host>] <path/to/image.sif>
+# Usage: scripts/deploy.sh --target=<leo5|leo4|vsc5|musica> [--via-host=<ssh-host>] <path/to/image.sif>
 #
 # --via-host: the image lives on another machine (e.g. the build host) at that
 # path; it is streamed from there through this machine. Use it when the build

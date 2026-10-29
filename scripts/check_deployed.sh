@@ -2,7 +2,7 @@
 # Compares the upstream branch tips against what edelweissfe-latest.sif on a
 # cluster was built from, to tell whether build.sh + deploy.sh need to run.
 #
-# Usage: scripts/check_deployed.sh --target=<leo5|leo4|vsc5>
+# Usage: scripts/check_deployed.sh --target=<leo5|leo4|vsc5|musica>
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_targets.sh"
 parse_target "$@"
