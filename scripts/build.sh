@@ -5,7 +5,7 @@
 #
 # Sources are the branch tips of the upstream repositories (EDELWEISSFE_REPO /
 # EDELWEISSFE_BRANCH, MARMOT_REPO / MARMOT_BRANCH, defaults: the GitHub
-# repositories, next_v26.11), resolved to commits once and pinned for the
+# repositories, master), resolved to commits once and pinned for the
 # build -- never whatever happens to be checked out locally. To build unpushed
 # work, point *_REPO at a local clone and *_BRANCH at its branch.
 #

@@ -68,9 +68,9 @@ load_target() {
     # The sources to build: the upstream branches unless the environment (or
     # deploy.local.sh) says otherwise, e.g. a local clone for unpushed work.
     : "${EDELWEISSFE_REPO:=https://github.com/Edelweiss-Numerics/EdelweissFE.git}"
-    : "${EDELWEISSFE_BRANCH:=next_v26.11}"
+    : "${EDELWEISSFE_BRANCH:=master}"
     : "${MARMOT_REPO:=https://github.com/MAteRialMOdelingToolbox/Marmot.git}"
-    : "${MARMOT_BRANCH:=next_v26.11}"
+    : "${MARMOT_BRANCH:=master}"
 }
 
 # Prints the full commit SHA of branch $2's tip in repository $1.

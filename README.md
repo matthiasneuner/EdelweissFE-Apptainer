@@ -39,8 +39,8 @@ Apptainer mounts your home directory and the current working directory by defaul
   cmake, MKL, vtk/pyvista, and Eigen/autodiff/Fastor/AMGCL. Nothing is compiled in this layer;
   it only changes with the `edelweissfe-dev` version.
 * `edelweissfe-debian-13.def` builds, on top of it:
-  * [Marmot](https://github.com/MAteRialMOdelingToolbox/Marmot), branch `next_v26.11`
-  * [EdelweissFE](https://github.com/Edelweiss-Numerics/EdelweissFE), branch `next_v26.11`
+  * [Marmot](https://github.com/MAteRialMOdelingToolbox/Marmot), branch `master`
+  * [EdelweissFE](https://github.com/Edelweiss-Numerics/EdelweissFE), branch `master`
 
   Repositories, branches, commits, CPU flags and extra materials are build arguments
   (`%arguments` in the `.def` file); the defaults are what CI builds.
@@ -88,7 +88,7 @@ scripts/check_deployed.sh --target=vsc5       # upstream tips vs. the deployed i
 ```
 
 * `build.sh` builds the **upstream** branch tips (`EDELWEISSFE_BRANCH`/`MARMOT_BRANCH`,
-  default `next_v26.11`), resolved to commits and pinned -- never the state of a local
+  default `master`), resolved to commits and pinned -- never the state of a local
   checkout. Point `EDELWEISSFE_REPO`/`MARMOT_REPO` at a local clone to build unpushed work.
   Images are named by both commits and the target, and are not rebuilt if present.
 * The base layer is cached as `.build/edelweissfe-base-<version>.sif` and rebuilt when the

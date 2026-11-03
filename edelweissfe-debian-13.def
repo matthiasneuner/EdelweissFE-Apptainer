@@ -24,11 +24,11 @@ From: {{ BASE_IMAGE }}
     # scripts/_targets.sh holds the same repositories and branches for the
     # scripts and CI; bump both.
     EDELWEISSFE_REPO=https://github.com/Edelweiss-Numerics/EdelweissFE.git
-    EDELWEISSFE_BRANCH=next_v26.11
+    EDELWEISSFE_BRANCH=master
     # A commit on EDELWEISSFE_BRANCH to check out; empty means the branch tip.
     EDELWEISSFE_COMMIT=
     MARMOT_REPO=https://github.com/MAteRialMOdelingToolbox/Marmot.git
-    MARMOT_BRANCH=next_v26.11
+    MARMOT_BRANCH=master
     MARMOT_COMMIT=
     # Space-separated access-controlled Marmot materials (e.g. "GCDP CDP") to
     # copy from /opt/build-mounts/marmot-materials, which the build must
